@@ -1,0 +1,1 @@
+export { DynatraceTab } from './DynatraceTab';

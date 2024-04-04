@@ -1,0 +1,317 @@
+name: main branch Pipeline
+
+on:
+  push:
+    branches:
+      - "main"
+
+env:
+  BACKEND_IMAGE_NAME: mck-developer-services-docker.jfrog.io/backstage-backend-v110
+  FRONTEND_IMAGE_NAME: mck-developer-services-docker.jfrog.io/backstage-frontend-v110
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [16.x]
+
+    env:
+      CI: true
+      NODE_OPTIONS: --max-old-space-size=4096
+    #      PRISMA_USER: ${{ secrets.PRISMA_USER }}
+    #       PRISMA_PASSWORD: ${{ secrets.PRISMA_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-node@v2.5.1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - id: cache-modules
+        name: cache all node_modules
+        uses: actions/cache@v2.1.7
+        with:
+          path: "**/node_modules"
+          key: ${{ runner.os }}-v${{ matrix.node-version }}-node_modules-${{ hashFiles('yarn.lock', '**/package.json') }}
+
+      - id: yarn-cache
+        name: find location of global yarn cache
+        if: steps.cache-modules.outputs.cache-hit != 'true'
+        run: echo "::set-output name=dir::$(yarn cache dir)"
+
+      - id: cache-global
+        name: cache global yarn cache
+        uses: actions/cache@v2.1.7
+        if: steps.cache-modules.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+      - id: yarn-install
+        run: yarn install --frozen-lockfile
+
+      #- id: prettier
+      #  run: yarn prettier:check
+
+      - id: lint
+        run: yarn lerna -- run lint
+
+      - id: type-checking
+        run: yarn tsc
+
+      - id: build
+        name: yarn build
+        run: |
+          # creating an empty file so build will succeed
+          touch github-app-credentials.yaml
+          yarn build:all
+          # removing empty file this file will be mounted when kube secret is mounted
+          rm github-app-credentials.yaml
+      - id: verify-type-deps
+        run: yarn lint:type-deps
+
+      #- id: test
+      #  run: |
+      #    yarn lerna -- run test
+
+      - id: clean-working-directory
+        name: ensure clean working directory
+        run: |
+          if files=$(git ls-files --exclude-standard --others --modified) && [[ -z "$files" ]]; then
+            exit 0
+          else
+            echo ""
+            echo "Working directory has been modified:"
+            echo ""
+            git status --short
+            echo ""
+            exit 1
+          fi
+      - id: short-sha
+        name: generate short SHA
+        uses: benjlevesque/short-sha@11e380d3de86805b74039b1b7572f383e5f6d8f6
+        with:
+          length: 6
+
+      - id: setup-docker-build
+        uses: docker/setup-buildx-action@v1
+
+      - id: jfrog-login
+        uses: docker/login-action@v1
+        with:
+          registry: mck-developer-services-docker.jfrog.io
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      #      - id: setup-prisma
+      #        name: Setup Prisma CLI
+      #        env:
+      #          ARTIFACTORY_API_KEY: ${{ secrets.DEV_PORTAL_JFROG_API_KEY }}
+      #        run: |
+      #          curl -u $PRISMA_USER:$PRISMA_PASSWORD --output twistcli https://us-east1.cloud.twistlock.com/us-2-158257908/api/v1/util/twistcli && chmod +x twistcli && mv twistcli /tmp/
+
+      - id: docker-build-frontend
+        name: Build frontend docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: ./packages/app
+          file: ./packages/app/Dockerfile
+          tags: |
+            ${{ env.FRONTEND_IMAGE_NAME }}:${{ steps.short-sha.outputs.sha }}
+            ${{ env.FRONTEND_IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.FRONTEND_IMAGE_NAME }}:latest
+          cache-to: type=inline
+          load: true
+
+      #      - id: scan-frontend-docker-image
+      #        name: Scan frontend docker image
+      #        run: |
+      #          docker images
+      #          /tmp/twistcli images scan --details --address https://us-east1.cloud.twistlock.com/us-2-158257908 --user "${PRISMA_USER}" --password "${PRISMA_PASSWORD}" "${FRONTEND_IMAGE_NAME}"
+
+      - id: docker-build-backend
+        name: Build backend docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./packages/backend/Dockerfile
+          tags: |
+            ${{ env.BACKEND_IMAGE_NAME }}:${{ steps.short-sha.outputs.sha }}
+            ${{ env.BACKEND_IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.BACKEND_IMAGE_NAME }}:latest
+          cache-to: type=inline
+          load: true
+
+      # - id: scan-backend-docker-image
+      #   name: Scan backend docker image
+      #   run: /tmp/twistcli images scan --details --address https://us-east1.cloud.twistlock.com/us-2-158257908 --user "${PRISMA_USER}" --password "${PRISMA_PASSWORD}" "${BACKEND_IMAGE_NAME}"
+
+      - if: github.ref == 'refs/heads/main'
+        id: push-docker-image
+        name: Push all docker images
+        run: |
+          docker push -a ${FRONTEND_IMAGE_NAME}
+          docker push -a ${BACKEND_IMAGE_NAME}
+      - if: github.ref == 'refs/heads/main'
+        id: version-bump-git-tag
+        name: Bump version and push git tag
+        uses: anothrNick/github-tag-action@ce4b5ffa38e072fa7a901e417253c438fcc2ccce
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    outputs:
+      backend-image-name: ${{ env.BACKEND_IMAGE_NAME }}:${{ steps.short-sha.outputs.sha }}
+      frontend-image-name: ${{ env.FRONTEND_IMAGE_NAME }}:${{ steps.short-sha.outputs.sha }}
+
+  deploy-dev:
+    name: Deploy to Dev
+    if: github.ref == 'refs/heads/main'
+    needs: build-test
+    environment: dev
+    runs-on: kube-deploy
+    env:
+      BACKEND_IMAGE_NAME: ${{ needs.build-test.outputs.backend-image-name }}
+      FRONTEND_IMAGE_NAME: ${{ needs.build-test.outputs.frontend-image-name }}
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: mck-tech-platform-srvs.jfrog.io/kubectl:latest
+      credentials:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_TOKEN }}
+    steps:
+    - name: Set env vars
+      run: |-
+        echo "CLUSTER_NAME=aks-westus-dev" >> $GITHUB_ENV
+        echo "PROJECT_ID=" >> $GITHUB_ENV
+        echo "LOCATION=westus" >> $GITHUB_ENV
+        echo "CLUSTER_RESOURCE_GROUP=rg-aks-westus-dev" >> $GITHUB_ENV
+        echo "NAMESPACE=developer-services-dev" >> $GITHUB_ENV
+        echo "ENV=aks-westus-dev" >> $GITHUB_ENV
+
+    - name: Get Manifest File
+      uses: actions/checkout@v2
+
+    - name: "Deploy to AKS DEV"
+      env:
+        APP_NAME: backstage
+        AUTH_GITHUB_CLIENT_ID: ${{ secrets.AUTH_GITHUB_CLIENT_ID_AZURE_DEV }}
+        AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.AUTH_GITHUB_CLIENT_SECRET_AZURE_DEV }}
+        AUTH_OKTA_CLIENT_ID: ${{ secrets.AUTH_OKTA_CLIENT_ID }}
+        AUTH_OKTA_CLIENT_SECRET: ${{ secrets.AUTH_OKTA_CLIENT_SECRET }}
+        AUTH_OKTA_CLIENT_URL: ${{ secrets.AUTH_OKTA_CLIENT_URL }}
+        BACKSTAGE_DB_AKS_PASS: ${{ secrets.BACKSTAGE_DB_AKS_DEV_PASS }}
+        BACKSTAGE_DB_AKS_USER: ${{ secrets.BACKSTAGE_DB_AKS_DEV_USER }}
+        CLUSTER_REGION: "US" # Change to EU for EU deployments
+        CLUSTER_TYPE: "AKS" # Change to AKS for AKS deployments
+        DOMAIN_NAME: backstage.dev.aks.west.us.mckesson.com
+        ENVIRONMENT: dev
+        GITHUB_APP_CREDS: ${{ secrets.PROD_GITHUB_APP_CREDS }}
+        IMAGE_PULL_SECRET: ds-regcred
+        KUBERNETES_SERVICE_ACCOUNT: ${{ secrets.DEV_PORTAL_KUBE_SA_US }} # TODO: Change to secrets.name of your Kubernetes SA
+        MANIFEST_NAME: manifest-dev.yml
+        KUBE_SA_US_DEV: ${{ secrets.KUBE_SA_US_DEV }}
+        KUBE_SA_US_PROD: ${{ secrets.KUBE_SA_US_PROD }}
+        KUBE_SA_AKS_US_DEV: ${{secrets.KUBE_SA_AKS_US_DEV}}
+        DYNATRACE_API_TOKEN: ${{secrets.DYNATRACE_API_TOKEN}}
+      run: |
+        # Setting up cluster configurations, config files are in the kubectl image
+        # https://github.com/mckesson/pltsrv-kube-apps/tree/master/kubectl
+        # source /gke/gke-clusters.config
+        source /aks/aks-clusters.config
+        DEV=$(eval "echo  \${CLUSTER_TYPE}_\${CLUSTER_REGION}DEV")
+        SHARED_CLUSTER="\$${DEV}"
+        # Set shared cluster cert and API
+        eval CLUSTER_CERT="${SHARED_CLUSTER}_CERT"
+        eval CLUSTER_API="${SHARED_CLUSTER}_API"
+        #envsubst < .kube/${MANIFEST_NAME} | cat
+        # envsubst command will substitute environmental variables available to this step into the
+        # kubernetes manifest file
+        # e.g. ${IMAGE_NAME} in the manifest-dev.yml will be replaced with an actual value
+        # The output i.e. the manifest file with actual values is then piped into the kubectl
+        # apply command to deploy the resources to Kubernetes
+        envsubst < .kube/${MANIFEST_NAME} | \
+        kubectl \
+          --namespace="developer-services-$ENVIRONMENT" \
+          --token="$KUBERNETES_SERVICE_ACCOUNT" \
+          --certificate-authority=$CLUSTER_CERT \
+          --server=$CLUSTER_API \
+          apply -f -
+
+  deploy-prod:
+    name: Deploy to Production
+    if: github.ref == 'refs/heads/main'
+    needs: [ build-test, deploy-dev ]
+    environment: 
+      name: prod
+    runs-on: kube-deploy
+    env:
+      BACKEND_IMAGE_NAME: ${{ needs.build-test.outputs.backend-image-name }}
+      FRONTEND_IMAGE_NAME: ${{ needs.build-test.outputs.frontend-image-name }}
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: mck-tech-platform-srvs.jfrog.io/kubectl:latest
+      credentials:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_TOKEN }}
+    steps:
+    - name: Set env vars
+      run: |-
+        echo "CLUSTER_NAME=aks-westus-prod" >> $GITHUB_ENV
+        echo "LOCATION=westus" >> $GITHUB_ENV
+        echo "CLUSTER_RESOURCE_GROUP=rg-aks-westus-prod" >> $GITHUB_ENV
+        echo "ENV=aks-westus-prod" >> $GITHUB_ENV
+
+    - name: Get Manifest File
+      uses: actions/checkout@v2    
+    
+    - name: "Deploy to AKS PROD"
+      env:
+        APP_NAME: backstage
+        AUTH_GITHUB_CLIENT_ID: ${{ secrets.AUTH_GITHUB_CLIENT_ID_AZURE }}
+        AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.AUTH_GITHUB_CLIENT_SECRET_AZURE }}
+        AUTH_OKTA_CLIENT_ID: ${{ secrets.AUTH_OKTA_CLIENT_ID }}
+        AUTH_OKTA_CLIENT_SECRET: ${{ secrets.AUTH_OKTA_CLIENT_SECRET }}
+        AUTH_OKTA_CLIENT_URL: ${{ secrets.AUTH_OKTA_CLIENT_URL }}
+        BACKSTAGE_DB_AKS_PASS: ${{ secrets.BACKSTAGE_DB_AKS_PASS }}
+        BACKSTAGE_DB_AKS_USER: ${{ secrets.BACKSTAGE_DB_AKS_USER }}
+        CLUSTER_REGION: "US" # Change to EU for EU deployments
+        CLUSTER_TYPE: "AKS" # Change to AKS for AKS deployments
+        DOMAIN_NAME: backstage.aks.west.us.mckesson.com
+        ENVIRONMENT: prod
+        GITHUB_APP_CREDS: ${{ secrets.PROD_GITHUB_APP_CREDS }}
+        IMAGE_PULL_SECRET: regcred
+        KUBERNETES_SERVICE_ACCOUNT: ${{ secrets.PORTAL_KUBE_SA_US }} # TODO: Change to secrets.name of your Kubernetes SA
+        MANIFEST_NAME: manifest-prod.yml
+        KUBE_SA_US_DEV: ${{ secrets.KUBE_SA_US_DEV }}
+        KUBE_SA_US_PROD: ${{ secrets.KUBE_SA_US_PROD }}
+        KUBE_SA_AKS_US_DEV: ${{secrets.KUBE_SA_AKS_US_DEV}}
+        DYNATRACE_API_TOKEN: ${{secrets.DYNATRACE_API_TOKEN}}
+      run: |
+        # Setting up cluster configurations, config files are in the kubectl image
+        # https://github.com/mckesson/pltsrv-kube-apps/tree/master/kubectl
+        # source /gke/gke-clusters.config
+        source /aks/aks-clusters.config
+        SHARED_CLUSTER="\$${CLUSTER_TYPE}_${CLUSTER_REGION}PROD"
+        # Set shared cluster cert and API
+        eval CLUSTER_CERT="${SHARED_CLUSTER}_CERT"
+        eval CLUSTER_API="${SHARED_CLUSTER}_API"
+        # envsubst command will substitute environmental variables available to this step into the
+        # kubernetes manifest file
+        # e.g. ${IMAGE_NAME} in the manifest-dev.yml will be replaced with an actual value
+        # The output i.e. the manifest file with actual values is then piped into the kubectl
+        # apply command to deploy the resources to Kubernetes
+        envsubst < .kube/${MANIFEST_NAME} | \
+        kubectl \
+          --namespace="developer-services-$ENVIRONMENT" \
+          --token="$KUBERNETES_SERVICE_ACCOUNT" \
+          --certificate-authority=$CLUSTER_CERT \
+          --server=$CLUSTER_API \
+          apply -f -

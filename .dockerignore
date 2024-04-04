@@ -1,0 +1,11 @@
+.git
+.yarn/cache
+.yarn/install-state.gz
+node_modules
+docs
+cypress
+microsite
+packages/*/src
+packages/*/node_modules
+plugins
+*.local.yaml

@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: backstage
+  description: A tool to help get things done. Built for developers by developers.
+  annotations:
+    github.com/project-slug: mckesson/backstage
+    backstage.io/techdocs-ref: 'dir:.'
+    backstage.io/kubernetes-id: backstage
+spec:
+  type: service
+  owner: developer-services
+  lifecycle: production

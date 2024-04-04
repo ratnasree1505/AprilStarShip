@@ -1,0 +1,248 @@
+app:
+  title: Developer Services Portal
+  baseUrl: http://localhost:3000
+  googleAnalyticsTrackingId: UA-146466701-2
+  #datadogRum:
+  #  clientToken: '123456789'
+  #  applicationId: qwerty
+  #   site: # datadoghq.eu default = datadoghq.com
+  #   env: #  optional
+  
+  support:
+    url: https://github.com/mckesson/starship/issues # Used by common ErrorPage
+    items: # Used by common SupportButton component
+      - title: Get Started
+        icon: help
+        links:
+          - url: https://cloudhub.mckesson.com/docs/cloudhub/devx/platform#creation-of-a-component
+            title: How to Create a Component
+      - title: Issues
+        icon: github
+        links:
+          - url: https://github.com/mckesson/starship/issues
+            title: GitHub Issues
+#RO      - title: Microsoft Teams
+ #       icon: chat
+  #      links:
+   #       - url: https://teams.microsoft.com/l/channel/19%3a262bbd3f630145b29008231e82e74f51%40thread.tacv2/General?groupId=101dd033-2261-4413-b268-4d4fda0ccb24&tenantId=da67ef1b-ca59-4db2-9a8c-aa8d94617a16
+    #        title: 'Developer Portal'
+
+organization:
+  name: McKesson
+
+backend:
+  # Used for enabling authentication, secret is shared by all backend plugins
+  # See https://backstage.io/docs/tutorials/backend-to-backend-auth for
+  # information on the format
+  # auth:
+  #   keys:
+  #     - secret: ${BACKEND_SECRET}
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+    # Uncomment the following host directive to bind to specific interfaces
+    # host: 127.0.0.1
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+    # Content-Security-Policy directives follow the Helmet format: https://helmetjs.github.io/#reference
+    # Default Helmet Content-Security-Policy values can be removed by setting the key to false
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  # This is for local development only, it is not recommended to use this in production
+  # The production database configuration is stored in app-config.production.yaml
+  database:
+    client: better-sqlite3
+    connection: ':memory:'
+  cache:
+    store: memory
+  # workingDirectory: /tmp # Use this to configure a working directory for the scaffolder, defaults to the OS temp-dir
+
+# See https://backstage.io/docs/integrations/github/github-apps#docsNav
+integrations:
+  github:
+    - host: github.com
+      apps:
+        - $include: github-app-credentials.yaml
+    ### Example for how to add your GitHub Enterprise instance using the API:
+    # - host: ghe.example.net
+    #   apiBaseUrl: https://ghe.example.net/api/v3
+    #   token: ${GHE_TOKEN}
+
+proxy:
+  ### Example for how to add a proxy endpoint for the frontend.
+  ### A typical reason to do this is to handle HTTPS and CORS for internal services.
+  # '/test':
+  #   target: 'https://example.com'
+  #   changeOrigin: true
+  '/dynatrace':
+    target: 'https://dxh99811.live.dynatrace.com/api/v2'
+    headers:
+      Authorization:
+        $env: DYNATRACE_API_TOKEN
+  '/cloudUtils':
+    target: 'https://cloudutils.aks.west.us.mckesson.com'
+
+dynatrace:
+  baseUrl: 'https://dxh99811.live.dynatrace.com'
+
+# Reference documentation http://backstage.io/docs/features/techdocs/configuration
+# Note: After experimenting with basic setup, use CI/CD to generate docs 
+# and an external cloud storage when deploying TechDocs for production use-case.
+# https://backstage.io/docs/features/techdocs/how-to-guides#how-to-migrate-from-techdocs-basic-to-recommended-deployment-approach
+techdocs:
+  storageUrl: http://localhost:7007/api/techdocs/static/docs
+  requestUrl: http://localhost:7007/api/techdocs
+  builder: 'local' # Alternatives - 'external'
+  generator:
+    runIn: 'local' # Alternatives - 'local'
+  publisher:
+    type: 'local' # Alternatives - 'googleGcs' or 'awsS3'. Read documentation for using alternatives.
+
+auth:
+  # see https://backstage.io/docs/auth/ to learn about auth providers
+  environment: development
+  providers:
+    github:
+      development:
+        clientId:
+          $env: AUTH_GITHUB_CLIENT_ID
+        clientSecret:
+          $env: AUTH_GITHUB_CLIENT_SECRET
+      production:
+        clientId:
+          $env: AUTH_GITHUB_CLIENT_ID
+        clientSecret:
+          $env: AUTH_GITHUB_CLIENT_SECRET
+    okta:
+      development:
+        clientId: 
+          $env: AUTH_OKTA_CLIENT_ID
+        clientSecret: 
+          $env: AUTH_OKTA_CLIENT_SECRET
+        audience: 
+          $env: AUTH_OKTA_CLIENT_URL
+      production:
+        clientId: 
+          $env: AUTH_OKTA_CLIENT_ID
+        clientSecret: 
+          $env: AUTH_OKTA_CLIENT_SECRET
+        audience: 
+          $env: AUTH_OKTA_CLIENT_URL          
+
+scaffolder:
+  # see https://backstage.io/docs/features/software-templates/configuration for software template options
+
+catalog:
+  # import:
+  #   entityFilename: catalog-info.yaml
+  #   pullRequestBranchName: backstage-integration
+  rules:
+    - allow:
+        - Component
+        - API
+        - Resource
+        - Template
+        - System
+        - Domain
+        - Location
+        - User
+        - Group
+
+  processors:
+    githubOrg:
+      providers:
+        - target: https://github.com
+
+  locations:
+    - type: github-org
+      target: https://github.com/mckesson
+#    - type: url
+#      target: https://github.com/mckesson/techdocs-gated-template/blob/main/template.yml
+#    - type: url
+#      target: https://github.com/mckesson/java-gated-template/blob/main/template.yml
+#    - type: url
+#      target: https://github.com/mckesson/python-gated-template/blob/main/template.yml
+#    - type: url
+#      target: https://github.com/mckesson/react-gated-template/blob/main/template.yml
+#    - type: url
+#      target: https://github.com/mckesson/react-ts-gated-template/blob/main/template.yml
+#    - type: url
+#      target: https://github.com/mckesson/dotnet-gated-template/blob/main/template.yml
+#    - type: url
+#      target: https://github.com/mckesson/java-gated-template/blob/main/template-terraform.yml
+#    - type: url
+#      target: https://github.com/mckesson/terraform-template/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/react-gated-template-v2/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/python-gated-template-v2/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/react-ts-gated-template-v2/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/dotnet-gated-template-v2/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/terraform-template-v2/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/techdocs-gated-template-v2/blob/main/template.yml
+ #RO   - type: url
+ #     target: https://github.com/mckesson/java-gated-template-v2/blob/main/template-terraform.yml
+    - type: url
+      target: https://github.com/mckesson/java-gated-template-v2/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/java-gated-template-v3/blob/main/template.yml
+    - type: url
+      target: https://github.com/mckesson/b2b-connect-backstage-backend-template/blob/main/template.yaml
+    - type: url
+      target: https://github.com/mckesson/java-gated-template-v2-ra/blob/main/template.yaml
+    # - type: url
+    #   target: https://github.com/mckesson/java-gated-template-ra1-v2/blob/main/template.yaml
+    # - type: url
+    #   target: https://github.com/mckesson/java-gated-template-v2-ra2/blob/main/template.yaml
+    - type: url
+      target: https://github.com/mckesson/j-java-test/blob/main/template.yaml
+    # - type: url
+      # target: https://github.com/mckesson/Caeast-romo-test/blob/main/template.yaml
+
+homepage:
+  clocks:
+    - label: UTC
+      timezone: UTC
+    - label: DE
+      timezone: 'Europe/Berlin'
+    - label: IE
+      timezone: 'Europe/Dublin'
+    - label: UK
+      timezone: 'Europe/London'
+    - label: GA
+      timezone: 'America/New_York'
+    - label: TX
+      timezone: 'America/Chicago'
+    - label: AZ
+      timezone: 'America/Denver'
+
+kubernetes:
+  serviceLocatorMethod:
+    type: 'multiTenant'
+  clusterLocatorMethods:
+    - type: 'config'
+      clusters:
+#        - url: https://10.118.247.226
+#          name: gke_gke-uswest1-dev-bf3f_us-west1_gke-uswest1-dev
+#          authProvider: 'serviceAccount'
+#          serviceAccountToken:
+#            $env: KUBE_SA_US_DEV
+#        - url: https://10.118.247.194
+#          name: gke_gke-uswest1-prod-ae8b_us-west1_gke-uswest1-prod
+#          authProvider: 'serviceAccount'
+#          serviceAccountToken:
+#            $env: KUBE_SA_US_PROD
+        - url: https://aks-westus-dev.privatelink.westus.azmk8s.io:443
+          skipTLSVerify: true # skip TLS for now, as backstage in AKS dev does not recognize the TLS certificate. And the K8s internal traffic may not need TLS 
+          skipMetricsLookup: true # turn off metrics lookup for now, as the service account developer-services-dev does not have necessary permission
+          name: aks-westus-dev
+          authProvider: 'serviceAccount'
+          serviceAccountToken:
+            $env: KUBE_SA_AKS_US_DEV
+
