@@ -25,6 +25,8 @@ import {
   isKind,
   hasCatalogProcessingErrors,
   isOrphan,
+  hasRelationWarnings,
+  EntityRelationWarning,
 } from '@backstage/plugin-catalog';
 import {
   isGithubActionsAvailable,
@@ -52,12 +54,9 @@ import {
   RELATION_PART_OF,
   RELATION_PROVIDES_API,
 } from '@backstage/catalog-model';
-import { EntityGithubInsightsContent } from '@roadiehq/backstage-plugin-github-insights';
-// #RO import { EntityKubernetesContent } from '@backstage/plugin-kubernetes';
 
 import { TechDocsAddons } from '@backstage/plugin-techdocs-react';
 import { ReportIssue } from '@backstage/plugin-techdocs-module-addons-contrib';
-// #RO import { DynatraceTab } from '@internal/plugin-dynatrace';
 
 const techdocsContent = (
   <EntityTechdocsContent>
@@ -100,6 +99,14 @@ const entityWarningContent = (
       <EntitySwitch.Case if={isOrphan}>
         <Grid item xs={12}>
           <EntityOrphanWarning />
+        </Grid>
+      </EntitySwitch.Case>
+    </EntitySwitch>
+
+    <EntitySwitch>
+      <EntitySwitch.Case if={hasRelationWarnings}>
+        <Grid item xs={12}>
+          <EntityRelationWarning />
         </Grid>
       </EntitySwitch.Case>
     </EntitySwitch>
@@ -168,21 +175,6 @@ const serviceEntityPage = (
     <EntityLayout.Route path="/docs" title="Docs">
       {techdocsContent}
     </EntityLayout.Route>
-    
-    <EntityLayout.Route 
-      path="/code-insights"
-      title="Code Insights">
-      <EntityGithubInsightsContent />
-    </EntityLayout.Route>
-{/* #RO    
-   <EntityLayout.Route path="/kubernetes" title="Kubernetes">
-      <EntityKubernetesContent />
-    </EntityLayout.Route>
-
-    <EntityLayout.Route path="/dynatrace" title="Dynatrace">
-      <DynatraceTab />
-    </EntityLayout.Route>
-*/}
   </EntityLayout>
 );
 
@@ -210,14 +202,6 @@ const websiteEntityPage = (
     <EntityLayout.Route path="/docs" title="Docs">
       {techdocsContent}
     </EntityLayout.Route>
-    <EntityLayout.Route 
-      path="/code-insights"
-      title="Code Insights">
-      <EntityGithubInsightsContent />
-    </EntityLayout.Route>
-{/* #RO      <EntityLayout.Route path="/kubernetes" title="Kubernetes">
-      <EntityKubernetesContent />
-</EntityLayout.Route>      */}
   </EntityLayout>
 );
 
@@ -316,8 +300,11 @@ const groupPage = (
         <Grid item xs={12} md={6}>
           <EntityOwnershipCard variant="gridItem" />
         </Grid>
-        <Grid item xs={12}>
+        <Grid item xs={12} md={6}>
           <EntityMembersListCard />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <EntityLinksCard />
         </Grid>
       </Grid>
     </EntityLayout.Route>

@@ -49,10 +49,6 @@ site
 
 # vscode database functionality support files
 *.session.sql
-# test pipeline in local script
-test_pipeline.sh
 
-# github integration file
-github-app-credentials.yaml
-
-.vscode/settings.json
+# E2E test reports
+e2e-test-report/
