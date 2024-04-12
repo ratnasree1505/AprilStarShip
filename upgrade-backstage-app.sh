@@ -73,7 +73,7 @@ else
 
     echo ${GREEN}"Checking for existance of app-config.production.yaml"
     echo ${NC}""
-    FILE=app-config.production.yam
+    FILE=app-config.production.yaml
     if ! [ -f "$FILE" ]; then
         echo ${RED}"app-config.production.yaml doesn't exist. Create a new one and add to git"
         echo "This file was moved from the base version of Backstage and needs to exist temporarily in git"
